@@ -60,7 +60,7 @@ export function DashboardPage() {
     {
       label: "活跃案件",
       value: data.activeCases,
-      meta: `${data.pendingReview} 件待复核或补证`,
+      meta: `${data.pendingReview} 件待复核、复议或补证`,
       icon: Files,
       color: "teal",
     },

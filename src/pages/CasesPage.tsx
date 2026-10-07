@@ -68,6 +68,7 @@ export function CasesPage() {
               { label: "活跃案件", value: "open" },
               { label: "调查中", value: "investigating" },
               { label: "待复核", value: "pending_review" },
+              { label: "待复议", value: "reconsider" },
               { label: "待补证", value: "supplement" },
               { label: "全部", value: "all" },
             ]}
@@ -109,6 +110,9 @@ export function CasesPage() {
                   <Table.Td>
                     <Text size="sm" ff="monospace" fw={600}>
                       {item.id}
+                    </Text>
+                    <Text size="xs" c="dimmed" ff="monospace">
+                      线索版本 R{item.revision}
                     </Text>
                   </Table.Td>
                   <Table.Td maw={360}>

@@ -13,7 +13,9 @@ import {
 import { notifications } from "@mantine/notifications";
 import { Download, RotateCcw, Search } from "lucide-react";
 import { useMemo, useState } from "react";
+import { CaseStatusBadge } from "../components/Badges";
 import { useGetAuditLogsQuery, useGetCasesQuery, useResetMockDataMutation } from "../services/api";
+import type { CaseStatus } from "../models/types";
 
 const download = (
   filename: string,
@@ -100,10 +102,11 @@ export function AuditPage() {
               download(
                 "fraud-case-audit.csv",
                 [
-                  ["时间", "案件", "操作人", "动作", "详情"],
+                  ["时间", "案件", "案件状态", "操作人", "动作", "详情"],
                   ...filteredLogs.map((item) => [
                     item.at,
                     item.caseId ?? "",
+                    item.caseStatus ?? "",
                     item.actor,
                     item.action,
                     item.detail,
@@ -178,6 +181,7 @@ export function AuditPage() {
               <Table.Tr>
                 <Table.Th>时间</Table.Th>
                 <Table.Th>案件</Table.Th>
+                <Table.Th>案件状态</Table.Th>
                 <Table.Th>操作人</Table.Th>
                 <Table.Th>动作</Table.Th>
                 <Table.Th>详情</Table.Th>
@@ -197,6 +201,17 @@ export function AuditPage() {
                     <Text size="sm" ff="monospace">
                       {item.caseId ?? "系统级"}
                     </Text>
+                  </Table.Td>
+                  <Table.Td>
+                    {item.caseStatus ? (
+                      <CaseStatusBadge
+                        value={item.caseStatus as CaseStatus}
+                      />
+                    ) : (
+                      <Text size="xs" c="dimmed">
+                        —
+                      </Text>
+                    )}
                   </Table.Td>
                   <Table.Td>{item.actor}</Table.Td>
                   <Table.Td>

@@ -1,12 +1,15 @@
 import type {
   Alert,
   AuditLog,
+  ConclusionSnapshot,
   ConclusionVersion,
   Evidence,
   InvestigationCase,
   InvestigationEdge,
   InvestigationNode,
+  SyncBatch,
 } from "../models/types";
+import { buildFingerprint, createSnapshot, recheckSnapshot } from "../services/snapshotEngine";
 
 export const seedAlerts: Alert[] = [
   {
@@ -148,18 +151,20 @@ export const seedCases: InvestigationCase[] = [
     summary: "三名账户持有人在短时间内共享设备与 IP，资金呈现快进快出。",
     alertIds: ["AL-20260929-001", "AL-20260929-002", "AL-20260928-009"],
     nextReviewAt: "2026-09-29T16:00:00+08:00",
+    revision: 3,
   },
   {
     id: "CASE-2026-016",
     title: "新开户集中提现核查",
-    status: "pending_review",
+    status: "reconsider",
     riskLevel: "high",
     owner: "周明",
     openedAt: "2026-09-27T09:42:00+08:00",
-    updatedAt: "2026-09-29T07:55:00+08:00",
+    updatedAt: "2026-09-29T10:40:00+08:00",
     summary: "开户后的十二小时内发生多地点 ATM 提现，待复核关联程度。",
     alertIds: ["AL-20260927-012"],
-    nextReviewAt: "2026-09-29T11:30:00+08:00",
+    nextReviewAt: "2026-10-06T15:00:00+08:00",
+    revision: 2,
   },
   {
     id: "CASE-2026-015",
@@ -172,6 +177,7 @@ export const seedCases: InvestigationCase[] = [
     summary: "受益账户与多个已关闭案件存在交易交集，需要补充交易用途材料。",
     alertIds: ["AL-20260925-018"],
     nextReviewAt: "2026-09-30T10:00:00+08:00",
+    revision: 1,
   },
 ];
 
@@ -274,6 +280,50 @@ export const seedNodes: InvestigationNode[] = [
       occurredAt: "2026-09-25T14:10:00+08:00",
     },
   },
+  // —— CASE-2026-016：提交结论时图谱中已有的节点 ——
+  {
+    id: "N-1843",
+    caseId: "CASE-2026-016",
+    position: { x: 120, y: 160 },
+    data: {
+      label: "6231 **** 1843",
+      kind: "account",
+      riskLevel: "high",
+      note: "新开户十二小时内集中提现。",
+      evidenceStrength: "strong",
+      source: "开户与交易流水 20260927",
+      occurredAt: "2026-09-27T09:14:00+08:00",
+    },
+  },
+  {
+    id: "N-ATM-307",
+    caseId: "CASE-2026-016",
+    position: { x: 460, y: 160 },
+    data: {
+      label: "ATM-SH-307",
+      kind: "device",
+      riskLevel: "medium",
+      note: "首笔大额提现终端。",
+      evidenceStrength: "medium",
+      source: "终端交易日志",
+      occurredAt: "2026-09-27T09:14:00+08:00",
+    },
+  },
+  // —— 结论提交后补录的节点，用于演示快照失效与影响复查 ——
+  {
+    id: "N-ATM-512",
+    caseId: "CASE-2026-016",
+    position: { x: 460, y: 380 },
+    data: {
+      label: "ATM-SH-512",
+      kind: "device",
+      riskLevel: "high",
+      note: "跨区第二台提现终端，与首笔间隔不到两小时。",
+      evidenceStrength: "strong",
+      source: "终端交易日志（10 月 6 日补录）",
+      occurredAt: "2026-09-27T11:02:00+08:00",
+    },
+  },
 ];
 
 export const seedEdges: InvestigationEdge[] = [
@@ -328,6 +378,28 @@ export const seedEdges: InvestigationEdge[] = [
     label: "登录 IP",
     occurredAt: "2026-09-28T12:06:00+08:00",
     explanation: "共享 IP 是关联线索，不能单独作为账户控制的结论。",
+  },
+  // —— CASE-2026-016：提交结论时图谱中已有的关系 ——
+  {
+    id: "E-016-001",
+    caseId: "CASE-2026-016",
+    source: "N-ATM-307",
+    target: "N-1843",
+    kind: "shared_device",
+    label: "提现终端",
+    occurredAt: "2026-09-27T09:14:00+08:00",
+    explanation: "提现终端与账户存在关联，但尚需核身记录确认操作人。",
+  },
+  // —— 结论提交后补录的关系，用于演示快照失效与影响复查 ——
+  {
+    id: "E-016-002",
+    caseId: "CASE-2026-016",
+    source: "N-ATM-512",
+    target: "N-1843",
+    kind: "shared_device",
+    label: "跨区二次提现",
+    occurredAt: "2026-09-27T11:02:00+08:00",
+    explanation: "提交复核后新补录的终端关系，直接影响设备跨度判断。",
   },
 ];
 
@@ -384,6 +456,34 @@ export const seedEvidence: Evidence[] = [
     note: "仅证明共同收款方，未证明资金最终归属。",
     version: 1,
   },
+  // —— CASE-2026-016：提交结论时已登记 ——
+  {
+    id: "EV-016-001",
+    caseId: "CASE-2026-016",
+    title: "新户开户与提现流水",
+    source: "核心交易系统",
+    strength: "strong",
+    occurredAt: "2026-09-27T09:14:00+08:00",
+    submittedAt: "2026-09-29T07:40:00+08:00",
+    submittedBy: "周明",
+    attachment: "atm-withdraw-20260927.csv",
+    note: "覆盖开户后十二小时内的柜面与 ATM 流水。",
+    version: 1,
+  },
+  // —— 结论提交后补录：构成快照失效的证据变更 ——
+  {
+    id: "EV-016-002",
+    caseId: "CASE-2026-016",
+    title: "跨区终端核身比对结果",
+    source: "视频核验平台",
+    strength: "strong",
+    occurredAt: "2026-09-27T11:02:00+08:00",
+    submittedAt: "2026-10-06T10:18:00+08:00",
+    submittedBy: "周明",
+    attachment: "atm-identity-check-512.pdf",
+    note: "结论提交后补录：第二台终端取款人像与开户人不一致。",
+    version: 1,
+  },
 ];
 
 export const seedConclusions: ConclusionVersion[] = [
@@ -410,6 +510,7 @@ export const seedConclusions: ConclusionVersion[] = [
     createdBy: "周明",
     createdAt: "2026-09-29T07:55:00+08:00",
     reviewer: "赵平",
+    snapshotId: "SNAP-016-001",
   },
   {
     id: "CV-015-001",
@@ -434,6 +535,7 @@ export const seedAuditLogs: AuditLog[] = [
     actor: "系统",
     action: "案件建立",
     detail: "告警 AL-20260929-001 达到高风险阈值并自动建立案件。",
+    caseStatus: "investigating",
   },
   {
     id: "LOG-1002",
@@ -442,6 +544,7 @@ export const seedAuditLogs: AuditLog[] = [
     actor: "林澜",
     action: "新增证据",
     detail: "交易明细提取单加入案件，证据强度标记为强。",
+    caseStatus: "investigating",
   },
   {
     id: "LOG-1003",
@@ -450,6 +553,7 @@ export const seedAuditLogs: AuditLog[] = [
     actor: "周明",
     action: "提交复核",
     detail: "结论版本 V1 提交，建议冻结非柜面支付。",
+    caseStatus: "pending_review",
   },
   {
     id: "LOG-1004",
@@ -458,5 +562,128 @@ export const seedAuditLogs: AuditLog[] = [
     actor: "赵平",
     action: "退回补证",
     detail: "结论退回，要求补充商户合同与交易用途。",
+    caseStatus: "supplement",
+  },
+  {
+    id: "LOG-1005",
+    caseId: "CASE-2026-016",
+    at: "2026-09-29T07:55:00+08:00",
+    actor: "系统",
+    action: "固化结论快照",
+    detail: "结论 CV-016-001 V1 提交时固化证据、图谱关系与时间线版本 SNAP-016-001。",
+    caseStatus: "pending_review",
+  },
+  {
+    id: "LOG-1006",
+    caseId: "CASE-2026-016",
+    at: "2026-10-06T10:18:00+08:00",
+    actor: "系统",
+    action: "快照影响复查",
+    detail: "线索变化触发复查：新增证据 1 份、图谱节点 1 个、关系 1 条，原裁定仍有效，状态转为待复议。",
+    caseStatus: "reconsider",
+  },
+  {
+    id: "LOG-1007",
+    caseId: "CASE-2026-017",
+    at: "2026-10-06T09:05:00+08:00",
+    actor: "系统",
+    action: "接收离线批次",
+    detail: "调查员周明离线批次 BATCH-017-001 等待合并，基线 R2 落后于当前 R3。",
+    caseStatus: "investigating",
+  },
+];
+
+/** 016 案快照：冻结点只包含提交当时已有的线索 */
+const frozen016Input = {
+  nodes: seedNodes.filter((item) => item.caseId === "CASE-2026-016" &&
+    ["N-1843", "N-ATM-307"].includes(item.id)),
+  edges: seedEdges.filter((item) => item.id === "E-016-001"),
+  evidence: seedEvidence.filter((item) => item.id === "EV-016-001"),
+  alerts: seedAlerts.filter((item) => item.id === "AL-20260927-012"),
+};
+
+const current016Input = {
+  nodes: seedNodes.filter((item) => item.caseId === "CASE-2026-016"),
+  edges: seedEdges.filter((item) => item.caseId === "CASE-2026-016"),
+  evidence: seedEvidence.filter((item) => item.caseId === "CASE-2026-016"),
+  alerts: seedAlerts.filter((item) => item.caseId === "CASE-2026-016"),
+};
+
+const snapshot016Verified = createSnapshot({
+  caseId: "CASE-2026-016",
+  conclusionId: "CV-016-001",
+  fingerprint: buildFingerprint(frozen016Input),
+  frozen: frozen016Input,
+  status: "verified",
+  createdAt: "2026-09-29T07:55:00+08:00",
+});
+
+const recheck016 = recheckSnapshot(snapshot016Verified, current016Input);
+
+export const seedSnapshots: ConclusionSnapshot[] = [
+  {
+    ...snapshot016Verified,
+    id: "SNAP-016-001",
+    status: recheck016.status,
+    impacts: recheck016.impacts,
+    recheckedAt: "2026-10-06T10:18:00+08:00",
+    recheckNote:
+      "补录的跨区终端与核身结果影响冻结结论的设备跨度判断，已转为待复议；原裁定在复议期间继续有效。",
+  },
+];
+
+/** 017 案离线批次：周明基于 R2 离线作业，林澜已在线把摘要推进到 R3 */
+export const seedSyncBatches: SyncBatch[] = [
+  {
+    id: "BATCH-017-001",
+    caseId: "CASE-2026-017",
+    investigator: "周明",
+    baseRevision: 2,
+    state: "conflict",
+    createdAt: "2026-10-06T08:40:00+08:00",
+    changes: [
+      {
+        id: "CHG-017-001",
+        kind: "add_evidence",
+        actor: "周明",
+        baseRevision: 2,
+        createdAt: "2026-10-06T08:42:00+08:00",
+        payload: {
+          clientId: "offline-zhou-017-ev-1",
+          title: "离线补充：柜面核身录像清单",
+          source: "柜面影像系统",
+          strength: "medium",
+          occurredAt: "2026-09-28T15:20:00+08:00",
+          attachment: "counter-verify-list.xlsx",
+          note: "离线核查时导出，可与设备指纹互证。",
+        },
+      },
+      {
+        id: "CHG-017-002",
+        kind: "update_summary",
+        actor: "周明",
+        baseRevision: 2,
+        createdAt: "2026-10-06T08:50:00+08:00",
+        payload: {
+          summary:
+            "三名账户持有人在短时间内共享设备与 IP，资金呈现快进快出；离线核身录像尚待比对。",
+        },
+      },
+    ],
+    appliedChangeIds: [],
+    conflicts: [
+      {
+        changeId: "CHG-017-002",
+        kind: "update_summary",
+        actor: "周明",
+        baseRevision: 2,
+        baseline:
+          "三名账户持有人在短时间内共享设备与 IP，资金呈现快进快出；离线核身录像尚待比对。",
+        current:
+          "三名账户持有人在短时间内共享设备与 IP，资金呈现快进快出。",
+        description: "案件摘要已被另一名调查员修改",
+      },
+    ],
+    failNext: false,
   },
 ];

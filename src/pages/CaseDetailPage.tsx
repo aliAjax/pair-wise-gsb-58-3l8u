@@ -43,6 +43,8 @@ import {
   selectNode,
 } from "../features/alerts/alertsSlice";
 import { InvestigationGraph } from "../features/graph/InvestigationGraph";
+import { SnapshotPanel } from "../features/conclusions/SnapshotPanel";
+import { OfflineSyncPanel } from "../features/sync/OfflineSyncPanel";
 import {
   TransactionTimeline,
   type TimelineEvent,
@@ -157,6 +159,13 @@ export function CaseDetailPage() {
   );
   const selectedNode = data.nodes.find((item) => item.id === selectedNodeId);
   const latestConclusion = data.conclusions[0];
+  const latestSnapshot = latestConclusion
+    ? data.snapshots.find(
+        (snapshot) => snapshot.conclusionId === latestConclusion.id,
+      )
+    : undefined;
+  const awaitingBackfill = latestSnapshot?.status === "pending_backfill";
+  const latestSnapshotStale = latestSnapshot?.status === "stale";
 
   const handleTimelineFocus = (event?: TimelineEvent) => {
     dispatch(focusTimeline(event?.id));
@@ -280,6 +289,14 @@ export function CaseDetailPage() {
       });
       return;
     }
+    if (submit && awaitingBackfill) {
+      notifications.show({
+        color: "red",
+        title: "旧结论快照待核",
+        message: "请先在「结论与复核」中补录上一版结论的快照，再重新提交结论。",
+      });
+      return;
+    }
     try {
       await saveConclusion({
         caseId,
@@ -294,7 +311,9 @@ export function CaseDetailPage() {
       notifications.show({
         color: "teal",
         title: submit ? "已提交复核" : "草稿已保存",
-        message: "结论版本已锁定创建人和创建时间。",
+        message: submit
+          ? "证据、图谱关系与时间线版本已固化为快照。"
+          : "结论版本已锁定创建人和创建时间。",
       });
       conclusionModal.close();
       setConclusionForm({
@@ -383,7 +402,8 @@ export function CaseDetailPage() {
               <CaseStatusBadge value={data.case.status} />
             </Group>
             <Text c="dimmed" size="sm" mt={5}>
-              {data.case.id} · 负责人 {data.case.owner} · 更新于{" "}
+              {data.case.id} · 负责人 {data.case.owner} · 线索版本 R
+              {data.case.revision} · 更新于{" "}
               {new Date(data.case.updatedAt).toLocaleString("zh-CN", {
                 hour12: false,
               })}
@@ -414,6 +434,13 @@ export function CaseDetailPage() {
         </Group>
       </Group>
 
+      {data.case.status === "reconsider" ? (
+        <Alert color="grape" title="案件待复议：原裁定仍有效，结论依据已发生变化">
+          提交后补录的证据或图谱关系已使快照失效。请在「结论与复核」中查看影响项，
+          基于新材料重新提交结论；未受影响的内容不会重算。
+        </Alert>
+      ) : null}
+
       <Paper withBorder p="md">
         <Group justify="space-between">
           <div>
@@ -433,14 +460,32 @@ export function CaseDetailPage() {
             >
               标记调查中
             </Button>
-            <Button
-              size="xs"
-              variant="light"
-              loading={isTransitioning}
-              onClick={() => handleTransition("pending_review")}
-            >
-              提交复核
-            </Button>
+            {data.case.status === "reconsider" ? (
+              <Button
+                size="xs"
+                variant="light"
+                color="grape"
+                onClick={() => {
+                  conclusionModal.open();
+                  notifications.show({
+                    color: "grape",
+                    title: "请重新提交结论",
+                    message: "快照失效后需基于补录材料生成新版本，原裁定仍有效。",
+                  });
+                }}
+              >
+                基于新材料重提结论
+              </Button>
+            ) : (
+              <Button
+                size="xs"
+                variant="light"
+                loading={isTransitioning}
+                onClick={() => handleTransition("pending_review")}
+              >
+                提交复核
+              </Button>
+            )}
             <Button
               size="xs"
               variant="light"
@@ -468,6 +513,7 @@ export function CaseDetailPage() {
           <Tabs.Tab value="graph">关系图谱与时间轴</Tabs.Tab>
           <Tabs.Tab value="evidence">证据台账</Tabs.Tab>
           <Tabs.Tab value="conclusions">结论与复核</Tabs.Tab>
+          <Tabs.Tab value="offline">离线合并</Tabs.Tab>
           <Tabs.Tab value="alerts">关联告警</Tabs.Tab>
         </Tabs.List>
 
@@ -700,6 +746,13 @@ export function CaseDetailPage() {
                             {item.reviewerNote}
                           </Alert>
                         ) : null}
+                        <SnapshotPanel
+                          caseId={caseId}
+                          conclusion={item}
+                          snapshot={data.snapshots.find(
+                            (snapshot) => snapshot.conclusionId === item.id,
+                          )}
+                        />
                       </Stack>
                     </div>
                   ))}
@@ -715,13 +768,24 @@ export function CaseDetailPage() {
                       当前版本 V{latestConclusion.version} ·{" "}
                       {dispositionLabels[latestConclusion.disposition]}
                     </Text>
-                    <Alert
-                      color="orange"
-                      icon={<RotateCcw size={16} />}
-                      mt="md"
-                    >
-                      关系关联不能直接作为结论。通过前应检查证据来源、发生时间与证据强度。
-                    </Alert>
+                    {latestSnapshotStale ? (
+                      <Alert color="grape" mt="md" title="快照失效 · 待复议">
+                        提交后的线索变化已列入影响复查。原裁定在复议期间仍有效，
+                        但应退回调查员并要求基于新材料重新提交结论，不能直接通过。
+                      </Alert>
+                    ) : awaitingBackfill ? (
+                      <Alert color="yellow" mt="md" title="旧数据 · 待核">
+                        该结论缺少提交时快照，请先在版本列表中补录快照，再执行复核。
+                      </Alert>
+                    ) : (
+                      <Alert
+                        color="orange"
+                        icon={<RotateCcw size={16} />}
+                        mt="md"
+                      >
+                        关系关联不能直接作为结论。通过前应检查证据来源、发生时间与证据强度。
+                      </Alert>
+                    )}
                     <Textarea
                       label="复核意见"
                       description="通过或退回意见均进入不可删除的审计记录"
@@ -737,6 +801,7 @@ export function CaseDetailPage() {
                         leftSection={<Check size={16} />}
                         color="teal"
                         loading={isReviewing}
+                        disabled={latestSnapshotStale || awaitingBackfill}
                         onClick={() => handleReview("approve")}
                       >
                         复核通过
@@ -746,6 +811,7 @@ export function CaseDetailPage() {
                         color="orange"
                         leftSection={<RotateCcw size={16} />}
                         loading={isReviewing}
+                        disabled={awaitingBackfill}
                         onClick={() => handleReview("return")}
                       >
                         退回补证
@@ -760,6 +826,14 @@ export function CaseDetailPage() {
               </Paper>
             </Grid.Col>
           </Grid>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="offline" pt="md">
+          <OfflineSyncPanel
+            caseId={caseId}
+            currentRevision={data.case.revision}
+            batches={data.syncBatches}
+          />
         </Tabs.Panel>
 
         <Tabs.Panel value="alerts" pt="md">
@@ -1098,6 +1172,11 @@ export function CaseDetailPage() {
         <Alert color="gray" mt="md">
           保存草稿不会触发复核；提交后生成独立版本并进入待复核状态。
         </Alert>
+        {awaitingBackfill ? (
+          <Alert color="yellow" mt="sm" title="旧结论待核">
+            上一版结论缺少提交时快照，补录前不能重新提交结论；可先保存草稿。
+          </Alert>
+        ) : null}
         <Group justify="flex-end" mt="lg">
           <Button variant="default" onClick={conclusionModal.close}>
             取消
@@ -1111,6 +1190,7 @@ export function CaseDetailPage() {
           </Button>
           <Button
             loading={isSavingConclusion}
+            disabled={awaitingBackfill}
             onClick={() => handleSaveConclusion(true)}
           >
             提交复核

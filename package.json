@@ -7,7 +7,9 @@
     "dev": "vite --host 0.0.0.0 --port 18458",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0 --port 18458",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify:logic": "esbuild scripts/verifyLogic.ts --bundle --platform=node --format=esm --outfile=scripts/.verifyLogic.mjs --log-level=warning && node scripts/.verifyLogic.mjs; status=$?; rm -f scripts/.verifyLogic.mjs; exit $status",
+    "verify:workflow": "esbuild scripts/verifyWorkflow.ts --bundle --platform=node --format=esm --outfile=scripts/.verifyWorkflow.mjs --log-level=warning && node scripts/.verifyWorkflow.mjs; status=$?; rm -f scripts/.verifyWorkflow.mjs; exit $status"
   },
   "dependencies": {
     "@mantine/core": "^9.6.3",
