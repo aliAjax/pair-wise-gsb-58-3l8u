@@ -27,6 +27,7 @@ import {
   GitBranchPlus,
   RotateCcw,
   Send,
+  ShieldQuestion,
 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
@@ -47,6 +48,9 @@ import {
   TransactionTimeline,
   type TimelineEvent,
 } from "../features/timeline/TransactionTimeline";
+import { OfflineSyncPanel } from "../components/OfflineSyncPanel";
+import { SnapshotReviewPanel } from "../components/SnapshotReviewPanel";
+import { SnapshotStateBadge } from "../components/Badges";
 import type {
   CaseDisposition,
   EvidenceStrength,
@@ -157,6 +161,13 @@ export function CaseDetailPage() {
   );
   const selectedNode = data.nodes.find((item) => item.id === selectedNodeId);
   const latestConclusion = data.conclusions[0];
+  const latestSnapshot = data.snapshots[0];
+  const hasPendingBackfill = data.snapshots.some(
+    (item) => item.state === "pending_backfill",
+  );
+  const hasStaleSnapshot = data.snapshots.some(
+    (item) => item.state === "stale",
+  );
 
   const handleTimelineFocus = (event?: TimelineEvent) => {
     dispatch(focusTimeline(event?.id));
@@ -408,6 +419,12 @@ export function CaseDetailPage() {
           <Button
             leftSection={<Send size={16} />}
             onClick={conclusionModal.open}
+            disabled={hasPendingBackfill}
+            title={
+              hasPendingBackfill
+                ? "旧数据快照待核，补录前不能重新提交结论"
+                : undefined
+            }
           >
             新建结论版本
           </Button>
@@ -463,11 +480,39 @@ export function CaseDetailPage() {
         </Group>
       </Paper>
 
+      {data.case.status === "reconsider" ? (
+        <Alert color="violet" icon={<ShieldQuestion size={16} />}>
+          <Group justify="space-between">
+            <div>
+              <Text fw={600}>案件待复议：结论所依据的线索已发生变化</Text>
+              <Text size="sm" c="dimmed" mt={4}>
+                原裁定继续有效、不会被静默修改。请在「结论快照与复查」中运行影响复查，
+                仅受影响的线索需要处理，未变化部分自动跳过；或基于新材料重新提交结论。
+              </Text>
+            </div>
+          </Group>
+        </Alert>
+      ) : null}
+      {hasPendingBackfill ? (
+        <Alert color="yellow">
+          <Text fw={600}>存在旧数据结论快照待核</Text>
+          <Text size="sm" mt={4}>
+            请先在「结论快照与复查」中核对并补录历史快照；补录前不能重新提交结论，
+            复核通过也会被拦截。
+          </Text>
+        </Alert>
+      ) : null}
+
       <Tabs defaultValue="graph" keepMounted={false}>
         <Tabs.List>
           <Tabs.Tab value="graph">关系图谱与时间轴</Tabs.Tab>
           <Tabs.Tab value="evidence">证据台账</Tabs.Tab>
           <Tabs.Tab value="conclusions">结论与复核</Tabs.Tab>
+          <Tabs.Tab value="snapshots">
+            结论快照与复查
+            {hasStaleSnapshot || hasPendingBackfill ? " ●" : ""}
+          </Tabs.Tab>
+          <Tabs.Tab value="offline">离线批次与合并</Tabs.Tab>
           <Tabs.Tab value="alerts">关联告警</Tabs.Tab>
         </Tabs.List>
 
@@ -660,10 +705,24 @@ export function CaseDetailPage() {
                       已通过的版本不可被覆盖，后续修改将产生新版本。
                     </Text>
                   </div>
-                  <Button onClick={conclusionModal.open}>新建版本</Button>
+                  <Button
+                    onClick={conclusionModal.open}
+                    disabled={hasPendingBackfill}
+                    title={
+                      hasPendingBackfill
+                        ? "旧数据快照待核，补录前不能重新提交结论"
+                        : undefined
+                    }
+                  >
+                    新建版本
+                  </Button>
                 </Group>
                 <Stack gap={0}>
-                  {data.conclusions.map((item, index) => (
+                  {data.conclusions.map((item, index) => {
+                    const itemSnapshot = data.snapshots.find(
+                      (snapshot) => snapshot.conclusionId === item.id,
+                    );
+                    return (
                     <div key={item.id}>
                       {index > 0 ? <Divider /> : null}
                       <Stack gap="xs" p="md">
@@ -674,6 +733,11 @@ export function CaseDetailPage() {
                             <Badge variant="light" color="gray">
                               {dispositionLabels[item.disposition]}
                             </Badge>
+                            {itemSnapshot ? (
+                              <SnapshotStateBadge
+                                value={itemSnapshot.state}
+                              />
+                            ) : null}
                           </Group>
                           <Text size="xs" c="dimmed">
                             {item.createdBy} ·{" "}
@@ -690,6 +754,14 @@ export function CaseDetailPage() {
                             </Badge>
                           ))}
                         </Group>
+                        {itemSnapshot ? (
+                          <Text size="xs" c="dimmed" ff="monospace">
+                            固化时间线版本 {itemSnapshot.timelineVersion} ·{" "}
+                            {itemSnapshot.evidence.length} 证据 /{" "}
+                            {itemSnapshot.nodes.length} 节点 /{" "}
+                            {itemSnapshot.edges.length} 关系
+                          </Text>
+                        ) : null}
                         {item.reviewerNote ? (
                           <Alert
                             color={
@@ -702,7 +774,8 @@ export function CaseDetailPage() {
                         ) : null}
                       </Stack>
                     </div>
-                  ))}
+                    );
+                  })}
                 </Stack>
               </Paper>
             </Grid.Col>
@@ -715,6 +788,15 @@ export function CaseDetailPage() {
                       当前版本 V{latestConclusion.version} ·{" "}
                       {dispositionLabels[latestConclusion.disposition]}
                     </Text>
+                    {latestSnapshot ? (
+                      <Group mt="sm">
+                        <SnapshotStateBadge value={latestSnapshot.state} />
+                        <Text size="xs" c="dimmed" ff="monospace">
+                          快照 {latestSnapshot.id} · 时间线{" "}
+                          {latestSnapshot.timelineVersion}
+                        </Text>
+                      </Group>
+                    ) : null}
                     <Alert
                       color="orange"
                       icon={<RotateCcw size={16} />}
@@ -722,6 +804,16 @@ export function CaseDetailPage() {
                     >
                       关系关联不能直接作为结论。通过前应检查证据来源、发生时间与证据强度。
                     </Alert>
+                    {hasPendingBackfill ? (
+                      <Alert color="yellow" mt="md">
+                        旧数据快照待核：请先到「结论快照与复查」补录，补录前无法通过结论。
+                      </Alert>
+                    ) : null}
+                    {hasStaleSnapshot ? (
+                      <Alert color="violet" mt="md">
+                        快照已失效、案件待复议：原裁定仍有效，但需先完成影响复查或重新提交结论后才能通过。
+                      </Alert>
+                    ) : null}
                     <Textarea
                       label="复核意见"
                       description="通过或退回意见均进入不可删除的审计记录"
@@ -737,6 +829,7 @@ export function CaseDetailPage() {
                         leftSection={<Check size={16} />}
                         color="teal"
                         loading={isReviewing}
+                        disabled={hasPendingBackfill || hasStaleSnapshot}
                         onClick={() => handleReview("approve")}
                       >
                         复核通过
@@ -760,6 +853,29 @@ export function CaseDetailPage() {
               </Paper>
             </Grid.Col>
           </Grid>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="snapshots" pt="md">
+          <Paper withBorder p="md">
+            <SnapshotReviewPanel
+              caseId={caseId}
+              snapshots={data.snapshots}
+              timelineVersion={data.timelineVersion}
+            />
+          </Paper>
+        </Tabs.Panel>
+
+        <Tabs.Panel value="offline" pt="md">
+          <Paper withBorder p="md">
+            <OfflineSyncPanel
+              caseId={caseId}
+              batches={data.syncBatches}
+              nodeOptions={data.nodes.map((item) => ({
+                value: item.id,
+                label: item.data.label,
+              }))}
+            />
+          </Paper>
         </Tabs.Panel>
 
         <Tabs.Panel value="alerts" pt="md">
@@ -1095,9 +1211,21 @@ export function CaseDetailPage() {
             }))
           }
         />
-        <Alert color="gray" mt="md">
-          保存草稿不会触发复核；提交后生成独立版本并进入待复核状态。
-        </Alert>
+        {hasPendingBackfill ? (
+          <Alert color="yellow" mt="md">
+            历史结论快照待核：请先在「结论快照与复查」补录后再提交；提交时会固化
+            新的证据、图谱关系与时间线版本。
+          </Alert>
+        ) : hasStaleSnapshot ? (
+          <Alert color="violet" mt="md">
+            原结论快照已失效（案件待复议）。本次提交将基于当前线索生成新快照，
+            原裁定保留在版本记录中且继续有效至新结论生效。
+          </Alert>
+        ) : (
+          <Alert color="gray" mt="md">
+            保存草稿不会触发复核；提交后生成独立版本并固化证据、图谱关系与时间线版本。
+          </Alert>
+        )}
         <Group justify="flex-end" mt="lg">
           <Button variant="default" onClick={conclusionModal.close}>
             取消
@@ -1111,6 +1239,7 @@ export function CaseDetailPage() {
           </Button>
           <Button
             loading={isSavingConclusion}
+            disabled={hasPendingBackfill}
             onClick={() => handleSaveConclusion(true)}
           >
             提交复核

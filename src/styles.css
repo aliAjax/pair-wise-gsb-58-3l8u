@@ -99,6 +99,10 @@ select {
   background: var(--mantine-color-orange-0);
 }
 
+.mono {
+  font-family: var(--mantine-font-family-monospace);
+}
+
 @media (max-width: 768px) {
   .graph-canvas {
     height: 470px;

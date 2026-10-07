@@ -13,6 +13,7 @@ import {
 import { notifications } from "@mantine/notifications";
 import { Download, RotateCcw, Search } from "lucide-react";
 import { useMemo, useState } from "react";
+import { CaseStatusBadge } from "../components/Badges";
 import { useGetAuditLogsQuery, useGetCasesQuery, useResetMockDataMutation } from "../services/api";
 
 const download = (
@@ -53,6 +54,11 @@ export function AuditPage() {
       return matchesCase && matchesKeyword;
     });
   }, [caseId, keyword, logs]);
+
+  const caseMap = useMemo(
+    () => new Map(cases.map((item) => [item.id, item])),
+    [cases],
+  );
 
   const handleReset = async () => {
     await resetMockData().unwrap();
@@ -172,19 +178,24 @@ export function AuditPage() {
       </Paper>
 
       <Paper withBorder>
-        <Table.ScrollContainer minWidth={960}>
+        <Table.ScrollContainer minWidth={1040}>
           <Table highlightOnHover verticalSpacing="sm">
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>时间</Table.Th>
                 <Table.Th>案件</Table.Th>
+                <Table.Th>当前状态</Table.Th>
                 <Table.Th>操作人</Table.Th>
                 <Table.Th>动作</Table.Th>
                 <Table.Th>详情</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {filteredLogs.map((item) => (
+              {filteredLogs.map((item) => {
+                const relatedCase = item.caseId
+                  ? caseMap.get(item.caseId)
+                  : undefined;
+                return (
                 <Table.Tr key={item.id}>
                   <Table.Td>
                     <Text size="xs" ff="monospace">
@@ -198,6 +209,15 @@ export function AuditPage() {
                       {item.caseId ?? "系统级"}
                     </Text>
                   </Table.Td>
+                  <Table.Td>
+                    {relatedCase ? (
+                      <CaseStatusBadge value={relatedCase.status} />
+                    ) : (
+                      <Text size="xs" c="dimmed">
+                        —
+                      </Text>
+                    )}
+                  </Table.Td>
                   <Table.Td>{item.actor}</Table.Td>
                   <Table.Td>
                     <Text size="sm" fw={600}>
@@ -208,7 +228,8 @@ export function AuditPage() {
                     <Text size="sm">{item.detail}</Text>
                   </Table.Td>
                 </Table.Tr>
-              ))}
+                );
+              })}
             </Table.Tbody>
           </Table>
         </Table.ScrollContainer>

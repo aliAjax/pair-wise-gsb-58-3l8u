@@ -5,6 +5,8 @@ import type {
   ConclusionStatus,
   EvidenceStrength,
   RiskLevel,
+  SnapshotState,
+  SyncBatchState,
 } from "../models/types";
 
 const riskMap: Record<
@@ -27,6 +29,7 @@ const caseStatusMap: Record<CaseStatus, { color: string; label: string }> = {
   investigating: { color: "blue", label: "调查中" },
   pending_review: { color: "orange", label: "待复核" },
   supplement: { color: "yellow", label: "待补证" },
+  reconsider: { color: "violet", label: "待复议" },
   closed: { color: "teal", label: "已关闭" },
 };
 
@@ -47,6 +50,18 @@ const conclusionMap: Record<
   submitted: { color: "orange", label: "待复核" },
   approved: { color: "teal", label: "已通过" },
   returned: { color: "red", label: "已退回" },
+};
+
+const snapshotMap: Record<SnapshotState, { color: string; label: string }> = {
+  current: { color: "teal", label: "快照有效" },
+  stale: { color: "violet", label: "快照失效·待复议" },
+  pending_backfill: { color: "yellow", label: "旧数据待核" },
+};
+
+const syncBatchMap: Record<SyncBatchState, { color: string; label: string }> = {
+  pending: { color: "blue", label: "待合并" },
+  save_failed: { color: "red", label: "保存失败·可重试" },
+  merged: { color: "teal", label: "已合并" },
 };
 
 interface BadgeProps<T extends string> {
@@ -95,6 +110,24 @@ export function ConclusionStatusBadge({
   value,
 }: BadgeProps<ConclusionStatus>) {
   const config = conclusionMap[value];
+  return (
+    <Badge color={config.color} variant="light">
+      {config.label}
+    </Badge>
+  );
+}
+
+export function SnapshotStateBadge({ value }: BadgeProps<SnapshotState>) {
+  const config = snapshotMap[value];
+  return (
+    <Badge color={config.color} variant="light">
+      {config.label}
+    </Badge>
+  );
+}
+
+export function SyncBatchStateBadge({ value }: BadgeProps<SyncBatchState>) {
+  const config = syncBatchMap[value];
   return (
     <Badge color={config.color} variant="light">
       {config.label}
